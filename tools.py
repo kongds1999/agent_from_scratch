@@ -267,7 +267,33 @@ def run_todo_update(
 # Skill Management
 ####################
 from pathlib import Path
-SKILLS_DIR: Path = Path(__file__).parent.parent / "skills"
+
+
+def _resolve_skills_dir() -> Path:
+    """定位 skills 目录，按优先级依次尝试：
+
+    1. 环境变量 ``SKILLS_DIR``（显式覆盖，便于部署到别处）
+    2. 从当前文件向上查找第一个存在的 ``<parent>/skills`` 目录
+    3. 回退到当前文件上级目录下的 ``skills/``
+
+    这样既兼容 ``src/skills/``，也兼容仓库根目录的 ``skills/``。
+    """
+    override = os.environ.get("SKILLS_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "skills"
+        if candidate.is_dir():
+            return candidate
+
+    return here.parent.parent / "skills"
+
+
+SKILLS_DIR: Path = _resolve_skills_dir()
+
+
 def discover_skills() -> Dict[str, str]:
     """
     Scans the skills directory and extracts metadata from SKILL.md files.
@@ -324,7 +350,7 @@ def discover_skills() -> Dict[str, str]:
                 
     return skills
 
-@function_tool
+@function_tool(name_override="list_skills")
 def run_list_skills() -> str:
     """
     Formats the list of discovered skills for the agent's tool output.
@@ -340,8 +366,10 @@ def run_list_skills() -> str:
     return "\n".join(f"  - {name}: {desc}" for name, desc in skills.items())
 
 
-@function_tool
-def run_load_skill(name: str) -> str:
+@function_tool(name_override="load_skill")
+def run_load_skill(
+    name: Annotated[str, "The exact name of the skill folder to load (see list_skills)."]
+) -> str:
     """
     Loads the full content of a specific skill file into the context.
 
@@ -367,3 +395,6 @@ def run_load_skill(name: str) -> str:
 
 
 AGENT_TOOLS = [run_bash, read_file, write_file, run_grep, run_glob, revert_file, run_todo_write, run_todo_read, run_todo_update]
+
+# "Meta-tooling" 工具：按需发现 / 加载 skill（见 05_skill_loading.py）
+SKILL_TOOLS = [run_list_skills, run_load_skill]
